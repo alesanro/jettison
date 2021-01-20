@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/wI2L/jettison"
+	"github.com/alesanro/jettison"
 )
 
 func ExampleMarshal() {
