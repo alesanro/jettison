@@ -3,6 +3,7 @@ package jettison
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -90,6 +91,24 @@ func (eo encOpts) isDeniedField(name string) bool {
 	}
 	if eo.allowList != nil {
 		if _, ok := eo.allowList[name]; !ok {
+			if name == "" {
+				return true
+			}
+			keys := strings.Split(name, ".")
+			if len(keys) > 1 {
+				for k := range eo.allowList {
+					if strings.HasPrefix(name, k) {
+						return false
+					}
+				}
+			}
+			if len(keys) == 1 {
+				for k := range eo.allowList {
+					if strings.HasPrefix(k, keys[0]) {
+						return false
+					}
+				}
+			}
 			return true
 		}
 	}

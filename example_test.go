@@ -310,6 +310,7 @@ func ExampleNoCompact() {
 func ExampleAllowList() {
 	type Z struct {
 		Omega int `json:"ω"`
+		Theta int `json:"t"`
 	}
 	type Y struct {
 		Pi string `json:"π"`
@@ -322,14 +323,14 @@ func ExampleAllowList() {
 		Y
 	}
 	x := X{
-		Z:     Z{Omega: 42},
+		Z:     Z{Omega: 42, Theta: 64},
 		Alpha: "1",
 		Beta:  "2",
 		Gamma: "3",
 		Y:     Y{Pi: "4"},
 	}
 	for _, opt := range []jettison.Option{
-		nil, jettison.AllowList([]string{"Z", "β", "Gamma", "π"}),
+		nil, jettison.AllowList([]string{"Z"}), jettison.AllowList([]string{"Z.t", "β", "Gamma", "π"}),
 	} {
 		b, err := jettison.MarshalOpts(x, opt)
 		if err != nil {
@@ -338,8 +339,9 @@ func ExampleAllowList() {
 		fmt.Printf("%s\n", string(b))
 	}
 	// Output:
-	// {"Z":{"ω":42},"α":"1","β":"2","Gamma":"3","π":"4"}
-	// {"Z":{},"β":"2","Gamma":"3","π":"4"}
+	// {"Z":{"ω":42,"t":64},"α":"1","β":"2","Gamma":"3","π":"4"}
+	// {"Z":{"ω":42,"t":64}}
+	// {"Z":{"t":64},"β":"2","Gamma":"3","π":"4"}
 }
 
 func ExampleDenyList() {
