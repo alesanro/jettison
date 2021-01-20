@@ -16,7 +16,7 @@ var (
 // An instruction appends the JSON representation
 // of a value pointed by the unsafe.Pointer p to
 // dst and returns the extended buffer.
-type instruction func(unsafe.Pointer, []byte, encOpts) ([]byte, error)
+type instruction func(unsafe.Pointer, []byte, encOpts, string) ([]byte, error)
 
 // instrCache is an eventually consistent cache that
 // maps Go type definitions to dynamically generated
@@ -211,7 +211,7 @@ func newStringInstr(quoted bool) instruction {
 }
 
 func newUnsupportedTypeInstr(t reflect.Type) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		return dst, &UnsupportedTypeError{t}
 	}
 }
@@ -219,31 +219,31 @@ func newUnsupportedTypeInstr(t reflect.Type) instruction {
 func newPtrInstr(t reflect.Type, quoted bool) instruction {
 	e := t.Elem()
 	i := newInstruction(e, true, quoted)
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return encodePointer(p, dst, opts, i)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return encodePointer(p, dst, opts, i, path)
 	}
 }
 
 func newAppendMarshalerCtxInstr(t reflect.Type, hasPtr bool) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		return encodeMarshaler(p, dst, opts, t, hasPtr, encodeAppendMarshalerCtx)
 	}
 }
 
 func newAppendMarshalerInstr(t reflect.Type, hasPtr bool) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		return encodeMarshaler(p, dst, opts, t, hasPtr, encodeAppendMarshaler)
 	}
 }
 
 func newJSONMarshalerInstr(t reflect.Type, hasPtr bool) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		return encodeMarshaler(p, dst, opts, t, hasPtr, encodeJSONMarshaler)
 	}
 }
 
 func newTextMarshalerInstr(t reflect.Type, hasPtr bool) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		return encodeMarshaler(p, dst, opts, t, hasPtr, encodeTextMarshaler)
 	}
 }
@@ -266,9 +266,9 @@ func newStructInstr(t reflect.Type, canAddr bool) instruction {
 	)
 	wg.Add(1)
 	i, loaded := structInstrCache.LoadOrStore(id,
-		instruction(func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+		instruction(func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 			wg.Wait() // few ns/op overhead
-			return ins(p, dst, opts)
+			return ins(p, dst, opts, path)
 		}),
 	)
 	if loaded {
@@ -286,7 +286,7 @@ func newStructInstr(t reflect.Type, canAddr bool) instruction {
 func newStructFieldsInstr(t reflect.Type, canAddr bool) instruction {
 	if t.NumField() == 0 {
 		// Fast path for empty struct.
-		return func(_ unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+		return func(_ unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 			return append(dst, "{}"...), nil
 		}
 	}
@@ -315,8 +315,8 @@ func newStructFieldsInstr(t reflect.Type, canAddr bool) instruction {
 			f.empty = cachedEmptyFuncOf(ftyp)
 		}
 	}
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return encodeStruct(p, dst, opts, dupl)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return encodeStruct(p, dst, opts, dupl, path)
 	}
 }
 
@@ -339,8 +339,8 @@ func newArrayInstr(t reflect.Type, canAddr bool) instruction {
 			isba = true
 		}
 	}
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return encodeArray(p, dst, opts, ins, size, t.Len(), isba)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return encodeArray(p, dst, opts, ins, size, t.Len(), isba, path)
 	}
 }
 
@@ -360,8 +360,8 @@ func newSliceInstr(t reflect.Type) instruction {
 		ins  = newInstruction(etyp, true, false)
 		size = etyp.Size()
 	)
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return encodeSlice(p, dst, opts, ins, size)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return encodeSlice(p, dst, opts, ins, size, path)
 	}
 }
 
@@ -396,22 +396,22 @@ func newMapInstr(t reflect.Type) instruction {
 	}
 	vi = newInstruction(et, false, false)
 
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return encodeMap(p, dst, opts, t, ki, vi)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return encodeMap(p, dst, opts, t, ki, vi, path)
 	}
 }
 
 func wrapInlineInstr(ins instruction) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
-		return ins(noescape(unsafe.Pointer(&p)), dst, opts)
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
+		return ins(noescape(unsafe.Pointer(&p)), dst, opts, path)
 	}
 }
 
 func wrapQuotedInstr(ins instruction) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		dst = append(dst, '"')
 		var err error
-		dst, err = ins(p, dst, opts)
+		dst, err = ins(p, dst, opts, path)
 		if err == nil {
 			dst = append(dst, '"')
 		}
@@ -420,10 +420,10 @@ func wrapQuotedInstr(ins instruction) instruction {
 }
 
 func wrapTextMarshalerNilCheck(ins instruction) instruction {
-	return func(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+	return func(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 		if *(*unsafe.Pointer)(p) == nil {
 			return append(dst, `""`...), nil
 		}
-		return ins(p, dst, opts)
+		return ins(p, dst, opts, path)
 	}
 }

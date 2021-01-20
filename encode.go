@@ -19,8 +19,15 @@ import (
 
 const hex = "0123456789abcdef"
 
+func combinedPath(path, name string) string {
+	if path == "" {
+		return name
+	}
+	return path + "." + name
+}
+
 //nolint:unparam
-func encodeBool(p unsafe.Pointer, dst []byte, _ encOpts) ([]byte, error) {
+func encodeBool(p unsafe.Pointer, dst []byte, _ encOpts, _ string) ([]byte, error) {
 	if *(*bool)(p) {
 		return append(dst, "true"...), nil
 	}
@@ -32,7 +39,7 @@ func encodeBool(p unsafe.Pointer, dst []byte, _ encOpts) ([]byte, error) {
 // quote characters are added at the beginning and the
 // end of the JSON string.
 // nolint:unparam
-func encodeString(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeString(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	dst = append(dst, '"')
 	dst = appendEscapedBytes(dst, sp2b(p), opts)
 	dst = append(dst, '"')
@@ -41,7 +48,7 @@ func encodeString(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
 }
 
 //nolint:unparam
-func encodeQuotedString(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeQuotedString(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	dst = append(dst, `"\"`...)
 	dst = appendEscapedBytes(dst, sp2b(p), opts)
 	dst = append(dst, `\""`...)
@@ -51,17 +58,17 @@ func encodeQuotedString(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, err
 
 // encodeFloat32 appends the textual representation of
 // the 32-bits floating point number pointed by p to dst.
-func encodeFloat32(p unsafe.Pointer, dst []byte, _ encOpts) ([]byte, error) {
+func encodeFloat32(p unsafe.Pointer, dst []byte, _ encOpts, path string) ([]byte, error) {
 	return appendFloat(dst, float64(*(*float32)(p)), 32)
 }
 
 // encodeFloat64 appends the textual representation of
 // the 64-bits floating point number pointed by p to dst.
-func encodeFloat64(p unsafe.Pointer, dst []byte, _ encOpts) ([]byte, error) {
+func encodeFloat64(p unsafe.Pointer, dst []byte, _ encOpts, path string) ([]byte, error) {
 	return appendFloat(dst, *(*float64)(p), 64)
 }
 
-func encodeInterface(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeInterface(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 	v := *(*interface{})(p)
 	if v == nil {
 		return append(dst, "null"...), nil
@@ -69,10 +76,10 @@ func encodeInterface(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error)
 	typ := reflect.TypeOf(v)
 	ins := cachedInstr(typ)
 
-	return ins(unpackEface(v).word, dst, opts)
+	return ins(unpackEface(v).word, dst, opts, path)
 }
 
-func encodeNumber(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeNumber(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	// Cast pointer to string directly to avoid
 	// a useless conversion.
 	num := *(*string)(p)
@@ -90,7 +97,7 @@ func encodeNumber(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
 	return append(dst, num...), nil
 }
 
-func encodeRawMessage(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeRawMessage(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	v := *(*json.RawMessage)(p)
 	if v == nil {
 		return append(dst, "null"...), nil
@@ -103,7 +110,7 @@ func encodeRawMessage(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error
 
 // encodeTime appends the time.Time value pointed by
 // p to dst based on the format configured in opts.
-func encodeTime(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeTime(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	t := *(*time.Time)(p)
 	y := t.Year()
 
@@ -129,7 +136,7 @@ func encodeTime(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
 
 // encodeDuration appends the time.Duration value pointed
 // by p to dst based on the format configured in opts.
-func encodeDuration(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeDuration(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	d := *(*time.Duration)(p)
 
 	switch opts.durationFmt {
@@ -181,16 +188,14 @@ func appendFloat(dst []byte, f float64, bs int) ([]byte, error) {
 	return dst, nil
 }
 
-func encodePointer(p unsafe.Pointer, dst []byte, opts encOpts, ins instruction) ([]byte, error) {
+func encodePointer(p unsafe.Pointer, dst []byte, opts encOpts, ins instruction, path string) ([]byte, error) {
 	if p = *(*unsafe.Pointer)(p); p != nil {
-		return ins(p, dst, opts)
+		return ins(p, dst, opts, path)
 	}
 	return append(dst, "null"...), nil
 }
 
-func encodeStruct(
-	p unsafe.Pointer, dst []byte, opts encOpts, flds []field,
-) ([]byte, error) {
+func encodeStruct(p unsafe.Pointer, dst []byte, opts encOpts, flds []field, path string, ) ([]byte, error) {
 	var (
 		nxt = byte('{')
 		key []byte // key of the field
@@ -200,7 +205,7 @@ func encodeStruct(
 fieldLoop:
 	for i := 0; i < len(flds); i++ {
 		f := &flds[i] // get pointer to prevent copy
-		if opts.isDeniedField(f.name) {
+		if opts.isDeniedField(combinedPath(path, f.name)) {
 			continue
 		}
 		v := p
@@ -241,7 +246,7 @@ fieldLoop:
 		dst = append(dst, key...)
 
 		var err error
-		if dst, err = f.instr(v, dst, opts); err != nil {
+		if dst, err = f.instr(v, dst, opts, combinedPath(path, f.name)); err != nil {
 			return dst, err
 		}
 	}
@@ -251,9 +256,7 @@ fieldLoop:
 	return append(dst, '}'), nil
 }
 
-func encodeSlice(
-	p unsafe.Pointer, dst []byte, opts encOpts, ins instruction, es uintptr,
-) ([]byte, error) {
+func encodeSlice(p unsafe.Pointer, dst []byte, opts encOpts, ins instruction, es uintptr, path string, ) ([]byte, error) {
 	shdr := (*sliceHeader)(p)
 	if shdr.Data == nil {
 		if opts.flags.has(nilSliceEmpty) {
@@ -264,7 +267,7 @@ func encodeSlice(
 	if shdr.Len == 0 {
 		return append(dst, "[]"...), nil
 	}
-	return encodeArray(shdr.Data, dst, opts, ins, es, shdr.Len, false)
+	return encodeArray(shdr.Data, dst, opts, ins, es, shdr.Len, false, path)
 }
 
 // encodeByteSlice appends a byte slice to dst as
@@ -272,7 +275,7 @@ func encodeSlice(
 // is set, the escaped bytes are appended to the
 // buffer directly, otherwise in base64 form.
 // nolint:unparam
-func encodeByteSlice(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeByteSlice(p unsafe.Pointer, dst []byte, opts encOpts, _ string) ([]byte, error) {
 	b := *(*[]byte)(p)
 	if b == nil {
 		return append(dst, "null"...), nil
@@ -296,9 +299,7 @@ func encodeByteSlice(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error)
 	return append(dst, '"'), nil
 }
 
-func encodeArray(
-	p unsafe.Pointer, dst []byte, opts encOpts, ins instruction, es uintptr, len int, isByteArray bool,
-) ([]byte, error) {
+func encodeArray(p unsafe.Pointer, dst []byte, opts encOpts, ins instruction, es uintptr, len int, isByteArray bool, path string, ) ([]byte, error) {
 	if isByteArray && opts.flags.has(byteArrayAsString) {
 		return encodeByteArrayAsString(p, dst, opts, len), nil
 	}
@@ -309,7 +310,7 @@ func encodeArray(
 		dst = append(dst, nxt)
 		nxt = ','
 		v := unsafe.Pointer(uintptr(p) + (uintptr(i) * es))
-		if dst, err = ins(v, dst, opts); err != nil {
+		if dst, err = ins(v, dst, opts, path); err != nil {
 			return dst, err
 		}
 	}
@@ -338,9 +339,7 @@ func encodeByteArrayAsString(p unsafe.Pointer, dst []byte, opts encOpts, len int
 	return dst
 }
 
-func encodeMap(
-	p unsafe.Pointer, dst []byte, opts encOpts, t reflect.Type, ki, vi instruction,
-) ([]byte, error) {
+func encodeMap(p unsafe.Pointer, dst []byte, opts encOpts, t reflect.Type, ki, vi instruction, path string, ) ([]byte, error) {
 	m := *(*unsafe.Pointer)(p)
 	if m == nil {
 		if opts.flags.has(nilMapEmpty) {
@@ -359,9 +358,9 @@ func encodeMap(
 
 	var err error
 	if opts.flags.has(unsortedMap) {
-		dst, err = encodeUnsortedMap(it, dst, opts, ki, vi)
+		dst, err = encodeUnsortedMap(it, dst, opts, ki, vi, path)
 	} else {
-		dst, err = encodeSortedMap(it, dst, opts, ki, vi, ml)
+		dst, err = encodeSortedMap(it, dst, opts, ki, vi, ml, path)
 	}
 	hiterPool.Put(it)
 
@@ -374,9 +373,7 @@ func encodeMap(
 // encodeUnsortedMap appends the elements of the map
 // pointed by p as comma-separated k/v pairs to dst,
 // in unspecified order.
-func encodeUnsortedMap(
-	it *hiter, dst []byte, opts encOpts, ki, vi instruction,
-) ([]byte, error) {
+func encodeUnsortedMap(it *hiter, dst []byte, opts encOpts, ki, vi instruction, path string, ) ([]byte, error) {
 	var (
 		n   int
 		err error
@@ -386,13 +383,13 @@ func encodeUnsortedMap(
 			dst = append(dst, ',')
 		}
 		// Encode entry's key.
-		if dst, err = ki(it.key, dst, opts); err != nil {
+		if dst, err = ki(it.key, dst, opts, path); err != nil {
 			return dst, err
 		}
 		dst = append(dst, ':')
 
 		// Encode entry's value.
-		if dst, err = vi(it.val, dst, opts); err != nil {
+		if dst, err = vi(it.val, dst, opts, path); err != nil {
 			return dst, err
 		}
 		n++
@@ -403,9 +400,7 @@ func encodeUnsortedMap(
 // encodeUnsortedMap appends the elements of the map
 // pointed by p as comma-separated k/v pairs to dst,
 // sorted by key in lexicographical order.
-func encodeSortedMap(
-	it *hiter, dst []byte, opts encOpts, ki, vi instruction, ml int,
-) ([]byte, error) {
+func encodeSortedMap(it *hiter, dst []byte, opts encOpts, ki, vi instruction, ml int, path string, ) ([]byte, error) {
 	var (
 		off int
 		err error
@@ -422,7 +417,7 @@ func encodeSortedMap(
 
 		// Encode the key and store the buffer
 		// portion to use during sort.
-		if buf.B, err = ki(it.key, buf.B, opts); err != nil {
+		if buf.B, err = ki(it.key, buf.B, opts, path); err != nil {
 			break
 		}
 		// Omit quotes of keys.
@@ -434,7 +429,7 @@ func encodeSortedMap(
 		// Encode the value and store the buffer
 		// portion corresponding to the semicolon
 		// delimited key/value pair.
-		if buf.B, err = vi(it.val, buf.B, opts); err != nil {
+		if buf.B, err = vi(it.val, buf.B, opts, path); err != nil {
 			break
 		}
 		kv.keyval = buf.B[off:len(buf.B)]
@@ -470,7 +465,7 @@ func encodeSortedMap(
 // This function replicates the behavior of encoding Go maps,
 // by returning an error for keys that are not of type string
 // or int, or that does not implement encoding.TextMarshaler.
-func encodeSyncMap(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
+func encodeSyncMap(p unsafe.Pointer, dst []byte, opts encOpts, path string) ([]byte, error) {
 	sm := (*sync.Map)(p)
 	dst = append(dst, '{')
 
@@ -483,9 +478,9 @@ func encodeSyncMap(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
 	// returns false to stop the map's iteration.
 	var err error
 	if opts.flags.has(unsortedMap) {
-		dst, err = encodeUnsortedSyncMap(sm, dst, opts)
+		dst, err = encodeUnsortedSyncMap(sm, dst, opts, path)
 	} else {
-		dst, err = encodeSortedSyncMap(sm, dst, opts)
+		dst, err = encodeSortedSyncMap(sm, dst, opts, path)
 	}
 	if err != nil {
 		return dst, err
@@ -495,7 +490,7 @@ func encodeSyncMap(p unsafe.Pointer, dst []byte, opts encOpts) ([]byte, error) {
 
 // encodeUnsortedSyncMap is similar to encodeUnsortedMap
 // but operates on a sync.Map type instead of a Go map.
-func encodeUnsortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, error) {
+func encodeUnsortedSyncMap(sm *sync.Map, dst []byte, opts encOpts, path string) ([]byte, error) {
 	var (
 		n   int
 		err error
@@ -505,13 +500,13 @@ func encodeUnsortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, erro
 			dst = append(dst, ',')
 		}
 		// Encode the key.
-		if dst, err = appendSyncMapKey(dst, key, opts); err != nil {
+		if dst, err = appendSyncMapKey(dst, key, opts, path); err != nil {
 			return false
 		}
 		dst = append(dst, ':')
 
 		// Encode the value.
-		if dst, err = appendJSON(dst, value, opts); err != nil {
+		if dst, err = appendJSON(dst, value, opts, path); err != nil {
 			return false
 		}
 		n++
@@ -522,7 +517,7 @@ func encodeUnsortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, erro
 
 // encodeSortedSyncMap is similar to encodeSortedMap
 // but operates on a sync.Map type instead of a Go map.
-func encodeSortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, error) {
+func encodeSortedSyncMap(sm *sync.Map, dst []byte, opts encOpts, path string) ([]byte, error) {
 	var (
 		off int
 		err error
@@ -539,7 +534,7 @@ func encodeSortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, error)
 
 		// Encode the key and store the buffer
 		// portion to use during the later sort.
-		if buf.B, err = appendSyncMapKey(buf.B, key, opts); err != nil {
+		if buf.B, err = appendSyncMapKey(buf.B, key, opts, path); err != nil {
 			return false
 		}
 		// Omit quotes of keys.
@@ -551,7 +546,7 @@ func encodeSortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, error)
 		// Encode the value and store the buffer
 		// portion corresponding to the semicolon
 		// delimited key/value pair.
-		if buf.B, err = appendJSON(buf.B, value, opts); err != nil {
+		if buf.B, err = appendJSON(buf.B, value, opts, path); err != nil {
 			return false
 		}
 		kv.keyval = buf.B[off:len(buf.B)]
@@ -580,7 +575,7 @@ func encodeSortedSyncMap(sm *sync.Map, dst []byte, opts encOpts) ([]byte, error)
 	return dst, err
 }
 
-func appendSyncMapKey(dst []byte, key interface{}, opts encOpts) ([]byte, error) {
+func appendSyncMapKey(dst []byte, key interface{}, opts encOpts, path string) ([]byte, error) {
 	if key == nil {
 		return dst, errors.New("unsupported nil key in sync.Map")
 	}
@@ -603,13 +598,13 @@ func appendSyncMapKey(dst []byte, key interface{}, opts encOpts) ([]byte, error)
 	// string by using the encodeString function
 	// directly instead of the generic appendJSON.
 	if isStr {
-		dst, err = encodeString(unpackEface(key).word, dst, opts)
+		dst, err = encodeString(unpackEface(key).word, dst, opts, path)
 		runtime.KeepAlive(key)
 	} else {
 		if quoted {
 			dst = append(dst, '"')
 		}
-		dst, err = appendJSON(dst, key, opts)
+		dst, err = appendJSON(dst, key, opts, path)
 	}
 	if err != nil {
 		return dst, err

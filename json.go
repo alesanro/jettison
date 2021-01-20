@@ -122,7 +122,7 @@ func Append(dst []byte, v interface{}) ([]byte, error) {
 	if v == nil {
 		return append(dst, "null"...), nil
 	}
-	return appendJSON(dst, v, defaultEncOpts())
+	return appendJSON(dst, v, defaultEncOpts(), "")
 }
 
 // MarshalOpts is similar to Marshal, but also accepts
@@ -156,7 +156,7 @@ func AppendOpts(dst []byte, v interface{}, opts ...Option) ([]byte, error) {
 			return nil, &InvalidOptionError{err}
 		}
 	}
-	return appendJSON(dst, v, eo)
+	return appendJSON(dst, v, eo, "")
 }
 
 func marshalJSON(v interface{}, opts encOpts) ([]byte, error) {
@@ -164,7 +164,7 @@ func marshalJSON(v interface{}, opts encOpts) ([]byte, error) {
 	buf := cachedBuffer()
 
 	var err error
-	buf.B, err = ins(unpackEface(v).word, buf.B, opts)
+	buf.B, err = ins(unpackEface(v).word, buf.B, opts, "")
 
 	// Ensure that v is reachable until
 	// the instruction has returned.
@@ -182,10 +182,10 @@ func marshalJSON(v interface{}, opts encOpts) ([]byte, error) {
 	return b, err
 }
 
-func appendJSON(dst []byte, v interface{}, opts encOpts) ([]byte, error) {
+func appendJSON(dst []byte, v interface{}, opts encOpts, path string) ([]byte, error) {
 	ins := cachedInstr(reflect.TypeOf(v))
 	var err error
-	dst, err = ins(unpackEface(v).word, dst, opts)
+	dst, err = ins(unpackEface(v).word, dst, opts, path)
 	runtime.KeepAlive(v)
 
 	return dst, err
