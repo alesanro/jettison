@@ -94,19 +94,12 @@ func (eo encOpts) isDeniedField(name string) bool {
 			if name == "" {
 				return true
 			}
-			keys := strings.Split(name, ".")
-			if len(keys) > 1 {
-				for k := range eo.allowList {
-					if strings.HasPrefix(name, k) {
-						return false
-					}
+			for k := range eo.allowList {
+				if strings.HasPrefix(name, k) {
+					return false
 				}
-			}
-			if len(keys) == 1 {
-				for k := range eo.allowList {
-					if strings.HasPrefix(k, keys[0]) {
-						return false
-					}
+				if strings.HasPrefix(k, name) {
+					return false
 				}
 			}
 			return true

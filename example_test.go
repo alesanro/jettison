@@ -315,11 +315,15 @@ func ExampleAllowList() {
 	type Y struct {
 		Pi string `json:"π"`
 	}
+	type W struct {
+		Zeta Z
+	}
 	type X struct {
 		Z     Z      `json:"Z"`
 		Alpha string `json:"α"`
 		Beta  string `json:"β"`
 		Gamma string
+		Omega W `json:"W"`
 		Y
 	}
 	x := X{
@@ -328,9 +332,10 @@ func ExampleAllowList() {
 		Beta:  "2",
 		Gamma: "3",
 		Y:     Y{Pi: "4"},
+		Omega: W{Zeta: Z{Omega: 24, Theta: 46}},
 	}
 	for _, opt := range []jettison.Option{
-		nil, jettison.AllowList([]string{"Z"}), jettison.AllowList([]string{"Z.t", "β", "Gamma", "π"}),
+		nil, jettison.AllowList([]string{"Z"}), jettison.AllowList([]string{"Z.t", "β", "Gamma", "π", "W.Zeta.t"}),
 	} {
 		b, err := jettison.MarshalOpts(x, opt)
 		if err != nil {
@@ -339,26 +344,35 @@ func ExampleAllowList() {
 		fmt.Printf("%s\n", string(b))
 	}
 	// Output:
-	// {"Z":{"ω":42,"t":64},"α":"1","β":"2","Gamma":"3","π":"4"}
+	// {"Z":{"ω":42,"t":64},"α":"1","β":"2","Gamma":"3","W":{"Zeta":{"ω":24,"t":46}},"π":"4"}
 	// {"Z":{"ω":42,"t":64}}
-	// {"Z":{"t":64},"β":"2","Gamma":"3","π":"4"}
+	// {"Z":{"t":64},"β":"2","Gamma":"3","W":{"Zeta":{"t":46}},"π":"4"}
 }
 
 func ExampleDenyList() {
+	type Z struct {
+		Omega int `json:"ω"`
+		Theta int `json:"t"`
+	}
+	type W struct {
+		Zeta Z
+	}
 	type X struct {
 		A int  `json:"aaAh"`
 		B bool `json:"buzz"`
 		C string
 		D uint
+		E W
 	}
 	x := X{
 		A: -42,
 		B: true,
 		C: "Loreum",
 		D: 42,
+		E: W{Zeta: Z{Omega: 42, Theta: 64}},
 	}
 	for _, opt := range []jettison.Option{
-		nil, jettison.DenyList([]string{"buzz", "D"}),
+		nil, jettison.DenyList([]string{"buzz", "D", "E.Zeta.ω"}),
 	} {
 		b, err := jettison.MarshalOpts(x, opt)
 		if err != nil {
@@ -367,8 +381,8 @@ func ExampleDenyList() {
 		fmt.Printf("%s\n", string(b))
 	}
 	// Output:
-	// {"aaAh":-42,"buzz":true,"C":"Loreum","D":42}
-	// {"aaAh":-42,"C":"Loreum"}
+	// {"aaAh":-42,"buzz":true,"C":"Loreum","D":42,"E":{"Zeta":{"ω":42,"t":64}}}
+	// {"aaAh":-42,"C":"Loreum","E":{"Zeta":{"t":64}}}
 }
 
 type (
