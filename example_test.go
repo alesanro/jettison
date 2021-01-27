@@ -309,7 +309,7 @@ func ExampleNoCompact() {
 
 func ExampleAllowList() {
 	type Z struct {
-		Omega int `json:"ω"`
+		Omega int `json:"tω"`
 		Theta int `json:"t"`
 	}
 	type Y struct {
@@ -344,8 +344,8 @@ func ExampleAllowList() {
 		fmt.Printf("%s\n", string(b))
 	}
 	// Output:
-	// {"Z":{"ω":42,"t":64},"α":"1","β":"2","Gamma":"3","W":{"Zeta":{"ω":24,"t":46}},"π":"4"}
-	// {"Z":{"ω":42,"t":64}}
+	// {"Z":{"tω":42,"t":64},"α":"1","β":"2","Gamma":"3","W":{"Zeta":{"tω":24,"t":46}},"π":"4"}
+	// {"Z":{"tω":42,"t":64}}
 	// {"Z":{"t":64},"β":"2","Gamma":"3","W":{"Zeta":{"t":46}},"π":"4"}
 }
 

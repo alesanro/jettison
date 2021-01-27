@@ -94,11 +94,13 @@ func (eo encOpts) isDeniedField(name string) bool {
 			if name == "" {
 				return true
 			}
-			for k := range eo.allowList {
-				if strings.HasPrefix(name, k) {
+
+			nameKeyPath := strings.Split(name, ".")
+			for _, allowedKeyPath := range eo.allowList {
+				if hasKeyPathPrefix(nameKeyPath, allowedKeyPath) {
 					return false
 				}
-				if strings.HasPrefix(k, name) {
+				if hasKeyPathPrefix(allowedKeyPath, nameKeyPath) {
 					return false
 				}
 			}
@@ -108,12 +110,24 @@ func (eo encOpts) isDeniedField(name string) bool {
 	return false
 }
 
-type stringSet map[string]struct{}
+func hasKeyPathPrefix(p1, p2 []string) bool {
+	for i := 0; i < len(p2); i++ {
+		if len(p1) < i+1 {
+			return false
+		}
+		if p1[i] != p2[i] {
+			return false
+		}
+	}
+	return true
+}
+
+type stringSet map[string][]string
 
 func fieldListToSet(list []string) stringSet {
 	m := make(stringSet)
 	for _, f := range list {
-		m[f] = struct{}{}
+		m[f] = strings.Split(f, ".")
 	}
 	return m
 }
